@@ -1,11 +1,16 @@
 # src/cogniquery/mcps/pdf_generator.py
 import os
 import base64
+import tempfile
+import time
 from weasyprint import HTML, CSS
 from markdown_it import MarkdownIt
 
 from .base import FileHandleOutput, PdfInput, RetrieveDataInput
 from .secure_file_storage import retrieve_data, store_data, StoreDataInput
+from .secure_file_storage import STORAGE_DIR  # for auto-discovery
+from pathlib import Path
+import json
 
 def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
     """
@@ -23,75 +28,98 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
     except Exception as e:
         return FileHandleOutput(success=False, error_message=f"Markdown parsing error: {str(e)}", file_handle="")
     
-    # Embed charts into the HTML by replacing placeholders
-    chart_counter = 0
+    # Normalize chart_handles: accept list or JSON-encoded string
+    try:
+        if isinstance(input_data.chart_handles, str):
+            try:
+                parsed = json.loads(input_data.chart_handles)
+                if isinstance(parsed, list):
+                    input_data.chart_handles = parsed
+                else:
+                    input_data.chart_handles = []
+            except Exception:
+                parts = [p.strip() for p in input_data.chart_handles.split(',') if p.strip()]
+                input_data.chart_handles = parts
+    except Exception:
+        input_data.chart_handles = []
+
+    # If no chart handles provided, auto-discover recent chart images stored locally
+    if not getattr(input_data, "chart_handles", None):
+        try:
+            p: Path = STORAGE_DIR  # type: ignore
+            candidates = []
+            for ext in (".png", ".jpg", ".jpeg"):
+                for f in p.glob(f"*{ext}"):
+                    candidates.append((f.stat().st_mtime, f.name))
+            candidates.sort(reverse=True)
+            input_data.chart_handles = [name for _, name in candidates[:10]]
+        except Exception:
+            input_data.chart_handles = []
+
+    # Embed charts using base64 data URIs with size optimization for WeasyPrint
+    images_html = ""
+    
     for chart_handle in input_data.chart_handles:
         retrieve_input = RetrieveDataInput(file_handle=chart_handle)
         retrieved_chart = retrieve_data(retrieve_input)
         if retrieved_chart.success:
             try:
-                # Determine file extension to get proper MIME type
                 file_extension = chart_handle.split('.')[-1].lower()
                 if file_extension == 'svg':
-                    mime_type = 'image/svg+xml'
                     # For SVG, decode from latin1 back to proper SVG text
                     svg_data = retrieved_chart.data.encode('latin1').decode('utf-8') if hasattr(retrieved_chart.data, 'encode') else retrieved_chart.data
-                    img_tag = f'<div class="chart-image">{svg_data}</div>'
+                    images_html += f'<div class="chart-image" style="margin: 20px 0;">{svg_data}</div>\n'
                 else:
-                    # For PNG/JPG images, they're stored as base64
-                    mime_type = f'image/{file_extension}'
-                    # The data should already be base64 from storage
-                    img_tag = f'<img src="data:{mime_type};base64,{retrieved_chart.data}" style="max-width: 100%; height: auto; margin: 20px 0; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" class="chart-image">'
-                
-                # Replace chart placeholders in the content
-                placeholder_patterns = [
-                    '<div class="chart-placeholder">',
-                    '[Interactive line chart showing',
-                    '[Pie chart showing',
-                    '[Interactive chart showing',
-                    '📊 **Revenue Trend Chart**',
-                    '🥧 **Market Share Distribution**',
-                    '🗺️ **Global Revenue Distribution Map**',
-                    '⚡ **System Performance Dashboard**'
-                ]
-                
-                # Find and replace the FIRST AVAILABLE placeholder (not just when chart_counter == 0)
-                placeholder_replaced = False
-                for pattern in placeholder_patterns:
-                    if pattern in html_content and not placeholder_replaced:
-                        # Replace the entire placeholder div with the actual image
-                        start_idx = html_content.find(pattern)
-                        if pattern == '<div class="chart-placeholder">':
-                            end_idx = html_content.find('</div>', start_idx) + 6
-                            html_content = html_content[:start_idx] + img_tag + html_content[end_idx:]
-                        else:
-                            # For text patterns, replace just the text with image
-                            end_idx = html_content.find(']', start_idx) + 1
-                            if end_idx > start_idx:
-                                html_content = html_content[:start_idx] + img_tag + html_content[end_idx:]
-                        placeholder_replaced = True
-                        break
-                
-                # If no placeholder found, append at the end of charts section
-                if not placeholder_replaced:
-                    charts_section = "## Key Findings"
-                    charts_idx = html_content.find(charts_section)
-                    if charts_idx != -1:
-                        insert_point = html_content.find("\n", charts_idx + len(charts_section))
-                        html_content = html_content[:insert_point] + f"\n\n{img_tag}\n" + html_content[insert_point:]
+                    # For binary images, use optimized approach that works with WeasyPrint
+                    # retrieved_chart.data is already latin1-encoded string from secure storage
+                    if isinstance(retrieved_chart.data, str):
+                        # Data is already latin1-encoded string, convert back to bytes
+                        raw_bytes = bytes(retrieved_chart.data, 'latin1')
                     else:
-                        # Fallback: add after first h2
-                        h2_idx = html_content.find("<h2>")
-                        if h2_idx != -1:
-                            next_section = html_content.find("</h2>", h2_idx) + 5
-                            html_content = html_content[:next_section] + f"\n{img_tag}\n" + html_content[next_section:]
-                
-                chart_counter += 1
-                
+                        raw_bytes = retrieved_chart.data
+                    
+                    # Create a temporary file in the secure storage directory (persistent during PDF generation)
+                    import uuid
+                    temp_filename = f"temp_chart_{uuid.uuid4().hex[:8]}.{file_extension}"
+                    temp_path = STORAGE_DIR / temp_filename
+                    
+                    try:
+                        # Write image to temp file in secure storage
+                        with open(temp_path, 'wb') as f:
+                            f.write(raw_bytes)
+                        
+                        # Use absolute file path for WeasyPrint
+                        original_path = STORAGE_DIR / chart_handle
+                        if original_path.exists():
+                            # Convert to absolute path with forward slashes for WeasyPrint
+                            abs_path = str(original_path.resolve()).replace('\\', '/')
+                            images_html += f'<img src="file:///{abs_path}" style="max-width: 100%; height: auto; margin: 20px 0; border-radius: 8px; display: block;" class="chart-image" />\n'
+                        else:
+                            images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart file {chart_handle} not found in storage</div>\n'
+                        
+                    except Exception as e:
+                        images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart {chart_handle} could not be displayed: {str(e)}</div>\n'
             except Exception as e:
-                # If image embedding fails, add a placeholder message
-                error_msg = f'<div class="chart-error">Chart {chart_handle} could not be displayed: {str(e)}</div>'
-                html_content += error_msg
+                images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart {chart_handle} could not be displayed: {str(e)}</div>\n'
+    
+    # Insert all images after the first heading or at the end
+    if images_html:
+        # Find insertion point - after first h1 or h2
+        insert_point = -1
+        for tag in ("</h1>", "</h2>"):
+            idx = html_content.find(tag)
+            if idx != -1:
+                insert_point = idx + len(tag)
+                break
+        
+        if insert_point != -1:
+            html_content = html_content[:insert_point] + f"\n\n<div class='charts-section'>\n{images_html}</div>\n" + html_content[insert_point:]
+        else:
+            # Fallback: append before closing body tag or at end
+            if "</body>" in html_content:
+                html_content = html_content.replace("</body>", f"\n<div class='charts-section'>\n{images_html}</div>\n</body>")
+            else:
+                html_content += f"\n\n<div class='charts-section'>\n{images_html}</div>\n"
 
     # Enhanced CSS for professional styling
     css = CSS(string='''
@@ -384,18 +412,32 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
     ''')
 
     try:
-        # Generate PDF bytes using WeasyPrint
+        # Generate the PDF using WeasyPrint
         pdf_bytes = HTML(string=html_content).write_pdf(stylesheets=[css])
         
-        # Store the PDF as raw binary data (not base64)
-        # We'll store it as a binary string by encoding it properly
-        pdf_store_input = StoreDataInput(data=pdf_bytes.decode('latin1'), file_name="final_report.pdf")
-        store_output = store_data(pdf_store_input)
-
-        if not store_output.success:
-            return FileHandleOutput(success=False, error_message="Failed to store final PDF report.")
-            
-        return FileHandleOutput(success=True, file_handle=store_output.file_handle)
-
+        # Store the PDF and return the file handle (convert bytes to latin1 string for storage)
+        pdf_data_str = pdf_bytes.decode('latin1')
+        pdf_store_input = StoreDataInput(data=pdf_data_str, file_name="final_report.pdf")
+        pdf_result = store_data(pdf_store_input)
+        
+        return FileHandleOutput(
+            success=pdf_result.success, 
+            file_handle=pdf_result.file_handle, 
+            error_message=pdf_result.error_message
+        )
     except Exception as e:
-        return FileHandleOutput(success=False, error_message=f"PDF generation failed: {e}")
+        return FileHandleOutput(success=False, error_message=f"PDF generation error: {str(e)}", file_handle="")
+    finally:
+        # Clean up temporary chart files from secure storage
+        try:
+            for file_path in STORAGE_DIR.glob("temp_chart_*.png"):
+                if file_path.stat().st_mtime < (time.time() - 300):  # Clean files older than 5 minutes
+                    file_path.unlink()
+            for file_path in STORAGE_DIR.glob("temp_chart_*.jpg"):
+                if file_path.stat().st_mtime < (time.time() - 300):
+                    file_path.unlink()
+            for file_path in STORAGE_DIR.glob("temp_chart_*.jpeg"):
+                if file_path.stat().st_mtime < (time.time() - 300):
+                    file_path.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors

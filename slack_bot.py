@@ -1,12 +1,41 @@
 # slack_bot.py
 
 import os
+import sys
+import site
 import threading
 import asyncio
+import re
+from typing import Any
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-from simple_agent import agent_runner
+from simple_agent import run_query_to_markdown
+
+# Ensure installed 'mcp' package is used rather than local './mcp' folder
+_repo_root = os.path.dirname(os.path.abspath(__file__))
+try:
+    if _repo_root in sys.path:
+        sys.path.remove(_repo_root)
+    site_paths: list[str] = []
+    try:
+        site_paths.extend(site.getsitepackages())
+    except Exception:
+        pass
+    try:
+        user_site = site.getusersitepackages()
+        if isinstance(user_site, str):
+            site_paths.append(user_site)
+    except Exception:
+        pass
+    for p in reversed([sp for sp in site_paths if sp in sys.path]):
+        sys.path.remove(p)
+        sys.path.insert(0, p)
+except Exception:
+    pass
+
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 
 # Load environment variables from .env file
@@ -16,25 +45,111 @@ load_dotenv()
 # Initialize with your bot token and app token
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 
-def run_cogniquery_and_reply(query: str, channel_id: str, client):
+def _md_to_slack(text: str) -> str:
+    t = text
+    t = re.sub(r'^(#{1,6})\s*(.+)$', lambda m: f"*{m.group(2).strip()}*", t, flags=re.MULTILINE)
+    t = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', t)
+    t = t.replace('---', '')
+    return t
+
+def run_cogniquery_and_reply(query: str, channel_id: str, client: Any) -> None:
     """
     Run the agent with the user's query and send the result back to the Slack channel.
     """
     try:
         print(f"🚀 Received query: '{query}' - Activating agent")
 
-        # Format query as messages for the agent
-        messages = [{"role": "user", "content": query}]
+        final_markdown = asyncio.run(run_query_to_markdown(query))
+        print("✅ Final markdown generated, posting summary and generating PDF...")
+        slack_text = _md_to_slack(final_markdown)
 
-        # Run the agent
-        asyncio.run(agent_runner(messages))
+        mcp_url = os.getenv("MCP_URL", "http://127.0.0.1:8010/mcp")
 
-        # Send response
-        client.chat_postMessage(
-            channel=channel_id,
-            text=f"Agent processed: '{query}' - Analysis complete."
-        )
-        print(f"📨 Sent response to channel {channel_id}")
+        async def _extract_text_content(res: Any) -> str:
+            try:
+                items = getattr(res, "content", None)
+                if items is None and isinstance(res, dict):
+                    items = res.get("content")
+                if items:
+                    texts = []
+                    for it in items:
+                        t = getattr(it, "text", None)
+                        if t is None and isinstance(it, dict):
+                            t = it.get("text")
+                        if t:
+                            texts.append(t)
+                    if texts:
+                        return "\n".join(texts)
+                return str(res)
+            except Exception:
+                return str(res)
+
+        async def _post_summary(text: str) -> None:
+            async with streamablehttp_client(mcp_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    try:
+                        await session.call_tool("slack_post", {"channel": channel_id, "text": text})
+                    except Exception as e:
+                        print(f"⚠️ slack_post via MCP failed: {e}")
+
+        async def _generate_pdf_and_upload(markdown_text: str) -> None:
+            async with streamablehttp_client(mcp_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    try:
+                        import json as _json
+                        # Discover recent chart handles saved by code_interpreter in secure storage
+                        try:
+                            storage_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.tmp_secure_storage')
+                            candidates: list[tuple[float, str]] = []
+                            for ext in ('.png', '.jpg', '.jpeg'):
+                                for name in os.listdir(storage_dir):
+                                    if name.lower().endswith(ext):
+                                        full = os.path.join(storage_dir, name)
+                                        try:
+                                            candidates.append((os.path.getmtime(full), name))
+                                        except Exception:
+                                            pass
+                            candidates.sort(reverse=True)
+                            chart_handles = [n for _, n in candidates[:10]]
+                        except Exception:
+                            chart_handles = []
+                        gen_res = await session.call_tool(
+                            "generate_pdf_report",
+                            {"markdown_content": markdown_text, "chart_handles": chart_handles}
+                        )
+                        txt = await _extract_text_content(gen_res)
+                        handle = None
+                        try:
+                            payload = _json.loads(txt)
+                            handle = payload.get("file_handle")
+                        except Exception:
+                            handle = None
+                        if not handle:
+                            print("⚠️ No file_handle returned for PDF; skipping upload")
+                            return
+                        await session.call_tool(
+                            "slack_upload",
+                            {
+                                "channel": channel_id,
+                                "filename": "final_report.pdf",
+                                "file_handle": handle,
+                                "initial_comment": "Here is your report (PDF).",
+                                "title": "CogniQuery Report",
+                            },
+                        )
+                    except Exception as e:
+                        print(f"⚠️ PDF generate/upload via MCP failed: {e}")
+
+        async def _orchestrate() -> None:
+            await asyncio.gather(
+                _post_summary(slack_text),
+                _generate_pdf_and_upload(final_markdown),
+            )
+
+        asyncio.run(_orchestrate())
+        print(f"📨 Posted summary and uploaded PDF to channel {channel_id} via MCP")
 
     except Exception as e:
         print(f"❌ An error occurred: {e}")

@@ -1,0 +1,166 @@
+# src/cogniquery_crew/config/tasks.yaml
+
+enhance_prompt_task:
+  description: >
+    Take the user's query: '{query}' and refine it into a single, highly detailed,
+    and specific question that is ready for data analysis. First, examine the database
+    schema using schema_explorer(table_filter='optional_regex') to understand what tables,
+    columns, data types, relationships, and constraints are available. Then examine sample
+    data from key tables using sql_executor(sql_query='SELECT * FROM table_name LIMIT 10')
+    to understand data patterns. 
+    Pay special attention to:
+    
+    1. Primary keys and foreign key relationships between tables
+    2. Data types and constraints for each column
+    3. Sample data from relevant tables to understand data quality and patterns
+    4. Temporal columns that enable time-based analysis
+    5. Categorical dimensions for breakdowns and comparisons
+    
+    Then refine the user's query to be specific about which data fields should be analyzed,
+    how tables should be joined, and what relationships should be leveraged. Ensure the 
+    question is feasible with the available data structure and takes advantage of the 
+    relational database design.
+    
+    The question must be self-contained and unambiguous, providing clear guidance on:
+    - Which tables to query and how they relate
+    - What metrics to calculate and how
+    - What dimensions to analyze
+    - What time periods or filters to apply
+  expected_output: >
+    A single, refined, and detailed question in plain English that specifically references
+    the available data fields, table relationships, and is feasible with the current database schema.
+    Include context about how tables are related and what joins will be necessary.
+
+analyze_data_task:
+  description: >
+    Based on the refined question from the Business Analyst, you MUST follow this EXACT workflow:
+    
+    STEP 1: Execute SQL Query
+    - Use sql_executor(sql_query='your_query') to get data from the database
+    
+    STEP 2: IMMEDIATELY Use code_interpreter (MANDATORY)
+    - As soon as you get SQL results, you MUST call code_interpreter(code='your_python_code', file_handle='<handle from sql_executor>')
+    - The code_interpreter will mount the CSV as /tmp/data.csv; load it into a DataFrame inside your code
+    - Create STUNNING, DETAILED charts using matplotlib.pyplot
+    - Apply professional styling, custom colors, and engaging visual design
+    - Save charts with plt.savefig('output/chart_1.png')
+    
+    STEP 3: Provide Analysis
+    - Summarize findings in markdown format
+    - Reference the charts you created
+    
+    CRITICAL REQUIREMENTS:
+    🚨 YOU MUST CALL BOTH SQLExecutor AND Code Interpreter TOOLS 
+    🚨 NO EXCEPTIONS - Code Interpreter is REQUIRED after every SQL query
+    🚨 Charts MUST be created and saved to output/ directory
+    🚨 If you don't use Code Interpreter, NO CHARTS will appear in the UI
+    
+    WORKFLOW ENFORCEMENT:
+    - Database: NeonDB PostgreSQL - use proper PostgreSQL syntax
+    - After sql_executor returns results, IMMEDIATELY call code_interpreter
+    - Use this exact pattern:
+      1. sql_executor(sql_query="SELECT * FROM table")
+      2. code_interpreter(code="import pandas as pd; import matplotlib.pyplot as plt; df = pd.read_csv('/tmp/data.csv'); fig, ax = plt.subplots(figsize=(12, 8)); ax.plot(range(3), [1,2,3]); plt.savefig('output/chart_1.png', dpi=300, bbox_inches='tight'); plt.close()", file_handle='<handle>')
+    
+    MANDATORY CODE INTERPRETER USAGE:
+    After getting a file_handle from sql_executor, you must immediately call code_interpreter(code=..., file_handle='<handle>') with code that:
+    - Imports pandas and matplotlib.pyplot
+    - Reads the CSV from '/tmp/data.csv' into df
+    - Creates compelling charts and saves them into 'output/' via plt.savefig('output/chart_1.png') then plt.close()
+    CRITICAL plt.savefig() REQUIREMENTS:
+    - MANDATORY: Every chart must be saved with plt.savefig('output/filename.png')
+    - MANDATORY: Use .png format only
+    - MANDATORY: Save to 'output/' directory
+    - MANDATORY: Use plt.close() after each plt.savefig()
+    - RECOMMENDED: Use dpi=300 and bbox_inches='tight' for high quality
+    - Without plt.savefig(), charts will NOT appear in the Streamlit UI
+    
+    PYTHON CODE STRUCTURE:
+    1. Import required libraries (pandas, matplotlib.pyplot, numpy)
+    2. Write and execute the SQL query to get data
+    3. Process the data from SQL results
+    4. Create your analysis and calculations  
+    5. Generate MULTIPLE stunning, professional charts with:
+       - Custom color palettes and professional styling
+       - Detailed annotations and insights overlaid
+       - Advanced matplotlib features (subplots, annotations, etc.)
+       - Executive-quality formatting and typography
+       - Statistical enhancements (trend lines, benchmarks, etc.)
+    6. Save charts using descriptive filenames (chart_1.png, chart_2.png, etc.)
+    7. Create a markdown table manually (do NOT use df.to_markdown() - tabulate is unavailable)
+    
+    CHART NAMING CONVENTIONS:
+    - Single chart: 'output/chart.png' OR 'output/chart_1.png' 
+    - Multiple charts: 'output/chart_1.png', 'output/chart_2.png', 'output/chart_3.png', etc.
+    - Use descriptive names if helpful: 'output/sales_trend.png', 'output/category_breakdown.png'
+    - All PNG files in output/ directory will be automatically displayed
+    
+    MARKDOWN TABLE FORMATTING:
+    - Create tables manually using this format:
+      | Column 1 | Column 2 | Column 3 |
+      |----------|----------|----------|
+      | Value 1  | Value 2  | Value 3  |
+    - Use proper alignment and spacing
+    - Include all relevant data from your analysis
+    - Format numbers appropriately (2 decimal places for currency, etc.)
+    
+    IMPORTANT RESTRICTIONS:
+    - Do NOT use 'import os' or any os module functions
+    - Do NOT use df.to_markdown() - tabulate library is unavailable
+    - Do NOT try to check file existence or directory contents
+    - Simply save charts with plt.savefig() and trust it works
+    - Focus on creating great visualizations, not file system operations
+    - Available libraries: pandas, numpy, matplotlib, datetime, json, re, psycopg2, sqlalchemy
+    - Unavailable libraries: tabulate, seaborn, plotly, bokeh, altair
+    
+    CRITICAL DATA READING REQUIREMENTS:
+    - NEVER use hardcoded CSV data strings in your code
+    - ALWAYS read data from the file: df = pd.read_csv('/tmp/data.csv')
+    - FORBIDDEN: csv_data variables, io.StringIO with hardcoded data
+    - The data file /tmp/data.csv contains the actual SQL query results
+    - Your analysis MUST be based on real data, not fabricated examples
+    
+    Your final output must be a markdown-formatted text containing:
+    1. A summary of your key findings
+    2. The data you analyzed, presented in a markdown table
+    3. Reference to the charts created (e.g., "Charts saved as chart_1.png and chart_2.png")
+    4. CONFIRMATION that charts were actually created using Code Interpreter
+    5. When referencing charts in markdown text, use just filename (e.g., chart_1.png) since markdown and images are in same output/ directory
+  expected_output: >
+    A comprehensive analysis in markdown format, including a summary, a markdown table
+    of the data, confirmation of which charts were created, and evidence that Code Interpreter was used for chart generation (e.g., "Charts saved as chart_1.png and chart_2.png").
+
+generate_report_task:
+  description: >
+    Take the markdown-formatted analysis and insights and compile them into a final,
+    professional report. You MUST preserve ALL key findings and insights from the data analysis.
+    After creating the markdown report, you MUST generate a PDF version using the generate_pdf_report tool.
+    
+    CRITICAL CONTENT REQUIREMENTS:
+    - PRESERVE all specific findings about segments, regions, discount percentages, and profitability
+    - HIGHLIGHT problem areas identified in the analysis (e.g., segments with excessive discounts)
+    - INCLUDE all data tables and key metrics from the analysis
+    - PROVIDE clear, actionable recommendations based on the findings
+    - DO NOT summarize away important details - include the full analysis
+    
+    CRITICAL WORKFLOW:
+    1. Create the final markdown report from the analysis - PRESERVE ALL KEY FINDINGS
+    2. Extract chart handles from the data analyst's artifacts (look for file handles like "average_discount_by_segment_region.png", "total_orders_by_segment_region.png")
+    3. Call generate_pdf_report(markdown_content=final_report, chart_handles=["handle1", "handle2"])
+    4. Confirm PDF generation success and provide the PDF file handle
+    
+    CHART HANDLE EXTRACTION:
+    - Look for chart file handles in the analysis artifacts
+    - Common patterns: "average_discount_by_segment_region.png", "total_orders_by_segment_region.png"
+    - Pass these as a JSON array to the chart_handles parameter
+    - If no specific handles found, use empty array []
+    
+    PDF GENERATION REQUIREMENTS:
+    - MANDATORY: Call generate_pdf_report after creating the markdown
+    - Pass the complete markdown content as markdown_content parameter
+    - Include all chart handles found in the analysis as chart_handles parameter
+    - Report success/failure of PDF generation
+  expected_output: >
+    The complete executive report in Markdown format, followed by confirmation of PDF generation
+    with the PDF file handle. The markdown should start with the report title (e.g., "# Executive Report: ...").
+    Place TLDR items inside the Executive Summary section under the title. End with PDF generation status.
