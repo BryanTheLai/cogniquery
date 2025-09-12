@@ -1,0 +1,18 @@
+# requirements.txt
+python-dotenv
+psycopg2-binary
+pandas
+matplotlib
+weasyprint
+markdown-it-py
+reportlab
+slack-bolt==1.19.1 
+fastmcp
+slack-sdk
+mcp==1.14.0
+mcp[cli]==1.14.0
+httpx
+langgraph
+keyring
+langchain-mcp-adapters
+langchain[google-genai]
