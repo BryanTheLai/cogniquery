@@ -8,7 +8,6 @@ markdown-it-py
 reportlab
 slack-bolt==1.19.1
 fastmcp
-slack-sdk
 mcp==1.14.0
 mcp[cli]==1.14.0
 httpx
@@ -16,3 +15,32 @@ langgraph
 keyring
 langchain-mcp-adapters
 langchain[google-genai]
+
+# Added for MCP tools and orchestration
+PyYAML
+requests
+beautifulsoup4
+jinja2
+
+
+
+
+# Database
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.9
+
+# Secure Sandbox
+e2b_code_interpreter==1.5.2
+# Sandbox Libraries
+pandas==2.3.1
+
+# PDF Generation
+weasyprint==66.0
+markdown-it-py==3.0.0
+
+
+# Slack
+slack-sdk==3.34.0
+
+# PDF Processing
+pymupdf==1.26.3

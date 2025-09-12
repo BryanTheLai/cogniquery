@@ -127,3 +127,23 @@ class SlackFileExtractionOutput(BaseMcpOutput):
     file_type: str = ""
     file_size: int = 0
     extraction_method: str = ""
+
+
+    
+# --- Web Search & Scraper Contracts ---
+class WebSearchInput(BaseMcpInput):
+    query: str = Field(..., description="The search query.")
+
+class SearchResult(BaseModel):
+    title: str
+    link: str
+    snippet: str
+
+class WebSearchOutput(BaseMcpOutput):
+    results: List[SearchResult] = Field(default_factory=list)
+
+class ScrapeWebsiteInput(BaseMcpInput):
+    url: str = Field(..., description="The URL of the website to scrape.")
+
+class ScrapeWebsiteOutput(BaseMcpOutput):
+    clean_content: str | None = None

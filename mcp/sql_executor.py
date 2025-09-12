@@ -19,7 +19,12 @@ def execute_sql_query(input_data: SqlQueryInput) -> SqlQueryResultOutput:
     if not _validate_query(input_data.sql_query):
         return SqlQueryResultOutput(success=False, error_message="Invalid query. Only SELECT statements are allowed.")
 
-    db_uri = os.getenv("DB_CONNECTION_URI")
+    db_uri = (
+        os.getenv("DB_CONNECTION_URI")
+        or os.getenv("NEONDB_CONN_STR")
+        or os.getenv("DATABASE_URL")
+        or os.getenv("POSTGRES_URI")
+    )
     if not db_uri:
         return SqlQueryResultOutput(success=False, error_message="Database connection URI is not configured on the server.")
 
