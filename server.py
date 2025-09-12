@@ -182,6 +182,7 @@ def slack_upload(
 app = mcp.http_app()
 
 
+
 def main(argv: Optional[list[str]] = None) -> None:
 	parser = argparse.ArgumentParser(
 		description="Run CogniQuery MCP server"
@@ -208,9 +209,9 @@ def main(argv: Optional[list[str]] = None) -> None:
 
 	if args.transport == "http":
 		print(
-			f"Starting MCP (http) on http://{args.host}:{args.port} ..."
+			f"Starting MCP (http) on http://{args.host}:{args.port}/mcp ..."
 		)
-		mcp.run(transport="http", host=args.host, port=args.port)
+		mcp.run(transport="http", host=args.host, port=args.port, path="/mcp")
 	else:
 		print("Starting MCP (stdio) ...")
 		mcp.run()  # stdio is default

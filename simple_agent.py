@@ -1,13 +1,36 @@
 from langgraph.prebuilt import create_react_agent
 from dotenv import load_dotenv
+import sys
 import os
 import asyncio
+import site
 from jinja2 import Template
 from typing import Any
 from utils.logging import log_entry
 
 load_dotenv()
-from mcp.client.session import ClientSession
+_repo_root = os.path.dirname(os.path.abspath(__file__))
+try:
+    if _repo_root in sys.path:
+        sys.path.remove(_repo_root)
+    # Move site-packages entries to the front so installed 'mcp' wins over local './mcp'
+    site_paths: list[str] = []
+    try:
+        site_paths.extend(site.getsitepackages())
+    except Exception:
+        pass
+    try:
+        user_site = site.getusersitepackages()
+        if isinstance(user_site, str):
+            site_paths.append(user_site)
+    except Exception:
+        pass
+    for p in reversed([sp for sp in site_paths if sp in sys.path]):
+        sys.path.remove(p)
+        sys.path.insert(0, p)
+except Exception:
+    pass
+from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from langchain_mcp_adapters.tools import load_mcp_tools
 # LLM setup

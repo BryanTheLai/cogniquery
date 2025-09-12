@@ -1,0 +1,113 @@
+[
+  {
+    "type": "step",
+    "content": {
+      "content": "why is m company doing so badly?",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "human",
+      "name": null,
+      "id": "ccdbbdac-cc9f-4989-a3b4-dcd685a40063",
+      "example": false
+    }
+  },
+  {
+    "type": "step",
+    "content": {
+      "content": "",
+      "additional_kwargs": {
+        "function_call": {
+          "name": "schema_explorer",
+          "arguments": "{}"
+        }
+      },
+      "response_metadata": {
+        "prompt_feedback": {
+          "block_reason": 0,
+          "safety_ratings": []
+        },
+        "finish_reason": "STOP",
+        "model_name": "gemini-2.5-flash",
+        "safety_ratings": []
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run--51b65b14-b060-41a4-bca1-71615c0656d2-0",
+      "example": false,
+      "tool_calls": [
+        {
+          "name": "schema_explorer",
+          "args": {},
+          "id": "421c3098-d994-423c-96ad-9be9e1e9bdf8",
+          "type": "tool_call"
+        }
+      ],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 7597,
+        "output_tokens": 125,
+        "total_tokens": 7722,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 115
+        }
+      }
+    }
+  },
+  {
+    "type": "step",
+    "content": {
+      "content": "Error: schema_explorer is not a valid tool, try one of [echo, slack_post, slack_upload].",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "tool",
+      "name": "schema_explorer",
+      "id": "c0ed3f35-0c9b-4a3d-b12a-0a2b2fde6c6a",
+      "tool_call_id": "421c3098-d994-423c-96ad-9be9e1e9bdf8",
+      "artifact": null,
+      "status": "error"
+    }
+  },
+  {
+    "type": "step",
+    "content": {
+      "content": "I understand you're concerned about your company's performance, but to help you, I need a lot more information. Unfortunately, I don't have access to your company's internal databases or financial systems to determine why it might be performing poorly.\n\nTo give you a meaningful analysis, please tell me:\n\n1.  **What specific metrics are you looking at?** (e.g., sales revenue, profit margins, customer churn, market share, employee satisfaction, stock price, etc.)\n2.  **What timeframe are you interested in?** (e.g., last quarter, last year, year-to-date, compared to previous periods)\n3.  **What data do you have available?** (e.g., financial statements, sales reports, customer data, operational metrics, marketing campaign results)\n4.  **What does \"doing so badly\" mean to you?** What are your expectations or benchmarks?\n\nOnce you provide more context and data, I can help you structure your analysis or identify key areas to investigate further.",
+      "additional_kwargs": {},
+      "response_metadata": {
+        "prompt_feedback": {
+          "block_reason": 0,
+          "safety_ratings": []
+        },
+        "finish_reason": "STOP",
+        "model_name": "gemini-2.5-flash",
+        "safety_ratings": []
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run--0e41e1ff-b509-46ee-bf53-480a79904819-0",
+      "example": false,
+      "tool_calls": [],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 7646,
+        "output_tokens": 506,
+        "total_tokens": 8152,
+        "input_token_details": {
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "reasoning": 286
+        }
+      }
+    }
+  },
+  {
+    "type": "agent_complete",
+    "content": {
+      "status": "completed",
+      "message": "Agent has finished execution"
+    }
+  }
+]

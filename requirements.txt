@@ -6,7 +6,7 @@ matplotlib
 weasyprint
 markdown-it-py
 reportlab
-slack-bolt==1.19.1 
+slack-bolt==1.19.1
 fastmcp
 slack-sdk
 mcp==1.14.0
