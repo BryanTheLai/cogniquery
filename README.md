@@ -5,7 +5,7 @@ AI-powered data analysis via Slack. Query databases, generate charts, create rep
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 Install weasyprint for PDF generation.
@@ -66,21 +66,3 @@ Bot analyzes database, creates charts, posts results.
 - **LangChain Agent**: Uses Gemini LLM for analysis
 - **Slack Bot**: Handles mentions and responses
 - **Tools**: Schema explorer, SQL executor, code interpreter, PDF generator
-
-
-
-
-
-
-What if i want to use mcp though?
-Why mcp doesnt work?
-
-Take your time, think exterley deeply and like a senior engineer. Take your time. Make sure it will work.
-Think from first principles and from the agents perspective,what the agent has, can do, how the image should be put in pdf, how to make it work, possible, how t3o deal with all of this,. think through and self critique, until you figure out a solution,
-
-Also the result is this, i think u hardcoded it or something.
-
-pdf should be based on agent and query, not hardcoded.
-
-@agent_log.json @simple_agent.py @pdf_generator.py @server.py @slack_bot.py 
-Fix
