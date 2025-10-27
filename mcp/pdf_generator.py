@@ -19,7 +19,8 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
     and returns a file handle to the final PDF.
     """
     try:
-        md = MarkdownIt()
+        # Enable table support for markdown rendering
+        md = MarkdownIt().enable('table')
         # Use raw HTML if provided, otherwise render markdown
         if getattr(input_data, "html_content", None):
             html_content = input_data.html_content
@@ -56,70 +57,62 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
         except Exception:
             input_data.chart_handles = []
 
-    # Embed charts using base64 data URIs with size optimization for WeasyPrint
-    images_html = ""
+    # Build a mapping of chart filenames to absolute file paths
+    # This allows us to replace inline image references in the HTML
+    import re
+    chart_path_mapping = {}
     
     for chart_handle in input_data.chart_handles:
-        retrieve_input = RetrieveDataInput(file_handle=chart_handle)
-        retrieved_chart = retrieve_data(retrieve_input)
-        if retrieved_chart.success:
-            try:
-                file_extension = chart_handle.split('.')[-1].lower()
-                if file_extension == 'svg':
-                    # For SVG, decode from latin1 back to proper SVG text
-                    svg_data = retrieved_chart.data.encode('latin1').decode('utf-8') if hasattr(retrieved_chart.data, 'encode') else retrieved_chart.data
-                    images_html += f'<div class="chart-image" style="margin: 20px 0;">{svg_data}</div>\n'
-                else:
-                    # For binary images, use optimized approach that works with WeasyPrint
-                    # retrieved_chart.data is already latin1-encoded string from secure storage
-                    if isinstance(retrieved_chart.data, str):
-                        # Data is already latin1-encoded string, convert back to bytes
-                        raw_bytes = bytes(retrieved_chart.data, 'latin1')
-                    else:
-                        raw_bytes = retrieved_chart.data
-                    
-                    # Create a temporary file in the secure storage directory (persistent during PDF generation)
-                    import uuid
-                    temp_filename = f"temp_chart_{uuid.uuid4().hex[:8]}.{file_extension}"
-                    temp_path = STORAGE_DIR / temp_filename
-                    
-                    try:
-                        # Write image to temp file in secure storage
-                        with open(temp_path, 'wb') as f:
-                            f.write(raw_bytes)
-                        
-                        # Use absolute file path for WeasyPrint
-                        original_path = STORAGE_DIR / chart_handle
-                        if original_path.exists():
-                            # Convert to absolute path with forward slashes for WeasyPrint
-                            abs_path = str(original_path.resolve()).replace('\\', '/')
-                            images_html += f'<img src="file:///{abs_path}" style="max-width: 100%; height: auto; margin: 20px 0; border-radius: 8px; display: block;" class="chart-image" />\n'
-                        else:
-                            images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart file {chart_handle} not found in storage</div>\n'
-                        
-                    except Exception as e:
-                        images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart {chart_handle} could not be displayed: {str(e)}</div>\n'
-            except Exception as e:
-                images_html += f'<div class="chart-error" style="color: red; margin: 20px 0;">Chart {chart_handle} could not be displayed: {str(e)}</div>\n'
-    
-    # Insert all images after the first heading or at the end
-    if images_html:
-        # Find insertion point - after first h1 or h2
-        insert_point = -1
-        for tag in ("</h1>", "</h2>"):
-            idx = html_content.find(tag)
-            if idx != -1:
-                insert_point = idx + len(tag)
-                break
+        # Extract the base filename (without UUID prefix if present)
+        # e.g., "abc123_my_chart.png" -> look for "my_chart.png" references
+        chart_filename = chart_handle
         
-        if insert_point != -1:
-            html_content = html_content[:insert_point] + f"\n\n<div class='charts-section'>\n{images_html}</div>\n" + html_content[insert_point:]
+        # Also check if this is a UUID-prefixed filename
+        # Pattern: "uuid_originalname.png"
+        parts = chart_handle.split('_', 1)
+        if len(parts) == 2:
+            possible_original = parts[1]  # e.g., "quarterly_profit_margin_trend.png"
+            chart_path_mapping[possible_original] = chart_handle
+        
+        # Also map the full handle
+        chart_path_mapping[chart_filename] = chart_handle
+    
+    # Replace inline image references in HTML with absolute file paths
+    # The markdown renderer creates <img src="filename.png" alt="..." />
+    # We need to replace src="filename.png" with src="file:///absolute/path/filename.png"
+    
+    def replace_img_src(match):
+        full_match = match.group(0)
+        src_content = match.group(1)
+        
+        # Extract just the filename (remove any path prefix)
+        filename = src_content.split('/')[-1]
+        
+        # Check if we have a mapping for this filename
+        chart_handle = None
+        if filename in chart_path_mapping:
+            chart_handle = chart_path_mapping[filename]
         else:
-            # Fallback: append before closing body tag or at end
-            if "</body>" in html_content:
-                html_content = html_content.replace("</body>", f"\n<div class='charts-section'>\n{images_html}</div>\n</body>")
+            # Try to find a partial match
+            for mapped_name, handle in chart_path_mapping.items():
+                if filename in handle or handle.endswith(filename):
+                    chart_handle = handle
+                    break
+        
+        if chart_handle:
+            # Resolve to absolute file path
+            chart_path = STORAGE_DIR / chart_handle
+            if chart_path.exists():
+                abs_path = str(chart_path.resolve()).replace('\\', '/')
+                return f'<img src="file:///{abs_path}" class="chart-image" style="max-width: 100%; height: auto; margin: 20px auto; border-radius: 8px; display: block;" '
             else:
-                html_content += f"\n\n<div class='charts-section'>\n{images_html}</div>\n"
+                return f'<div class="chart-error">Chart {filename} not found in storage</div><img '
+        else:
+            # Chart not found in our mapping - leave original reference
+            return full_match
+    
+    # Replace all <img src="..."> tags
+    html_content = re.sub(r'<img src="([^"]+)"', replace_img_src, html_content)
 
     # Enhanced CSS for professional styling
     css = CSS(string='''
@@ -152,9 +145,29 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
             margin-bottom: 0.5em;
             page-break-after: avoid;
         }
-        h1 { font-size: 24px; color: #1a1a1a; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-        h2 { font-size: 20px; color: #2c3e50; border-bottom: 2px solid #e74c3c; padding-bottom: 8px; }
-        h3 { font-size: 16px; color: #34495e; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }
+        h1 { 
+            font-size: 18px; 
+            color: #0f4c81; 
+            text-align: center;
+            border-bottom: none;
+            padding-bottom: 10px;
+            margin-bottom: 0.3em;
+            font-weight: 700;
+        }
+        h2 { 
+            font-size: 14px; 
+            color: #0f4c81; 
+            border-bottom: 2px solid #333; 
+            padding-bottom: 8px;
+            margin-top: 1.8em;
+            font-weight: 700;
+        }
+        h3 { 
+            font-size: 14px; 
+            color: #34495e; 
+            font-weight: 600;
+            margin-top: 1.2em;
+        }
         
         /* Tables */
         table { 
@@ -353,9 +366,23 @@ def generate_pdf_report(input_data: PdfInput) -> FileHandleOutput:
         /* Horizontal rules */
         hr {
             border: none;
-            height: 2px;
-            background: linear-gradient(to right, #3498db, #e74c3c, #f39c12);
-            margin: 2em 0;
+            height: 1px;
+            background-color: #333;
+            margin: 1.5em 0;
+        }
+        
+        /* Italic text for timestamps */
+        em {
+            color: #666;
+            font-style: italic;
+            font-size: 11px;
+        }
+        
+        /* Center text for timestamps */
+        p > em:only-child {
+            display: block;
+            text-align: center;
+            margin: 0.5em 0 1.5em 0;
         }
         
         /* Code blocks */

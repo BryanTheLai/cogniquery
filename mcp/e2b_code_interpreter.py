@@ -150,57 +150,63 @@ def execute_code_in_sandbox(input_data: CodeInterpreterInput) -> CodeInterpreter
                 post_code = (
                     "import os, glob, base64\n"
                     "paths = glob.glob('output/*.png') + glob.glob('output/*.jpg') + glob.glob('output/*.jpeg')\n"
+                    "print(f'__CQ_FOUND_FILES__:{len(paths)}')\n"
                     "for p in paths:\n"
                     "    try:\n"
                     "        with open(p, 'rb') as f:\n"
                     "            b64 = base64.b64encode(f.read()).decode('ascii')\n"
-                    "        print('__CQ_ARTIFACT__:' + os.path.basename(p) + ':' + b64)\n"
+                    "        # Use marker to indicate start and end of artifact\n"
+                    "        print('__CQ_ARTIFACT_START__:' + os.path.basename(p))\n"
+                    "        print(b64)\n"
+                    "        print('__CQ_ARTIFACT_END__')\n"
                     "    except Exception as e:\n"
                     "        print('__CQ_ARTIFACT_ERR__:' + p + ':' + str(e))\n"
                 )
                 post_exec = sandbox.run_code(post_code)
-                # Parse artifacts from stdout/logs
-                def _parse_lines(lines):
-                    nonlocal artifacts, stdout
-                    for line in lines or []:
-                        if isinstance(line, bytes):
-                            try:
-                                line = line.decode('utf-8', errors='ignore')
-                            except Exception:
-                                continue
-                        if isinstance(line, str) and line.startswith('__CQ_ARTIFACT__:'):
-                            try:
-                                _, meta = line.split('__CQ_ARTIFACT__:', 1)
-                                fname, b64 = meta.split(':', 1)
-                                import base64 as _b64
-                                data_bytes = _b64.b64decode(b64)
-                                
-                                # Map output/ prefixed filenames to descriptive names
-                                if fname.startswith('output/'):
-                                    base_fname = fname[7:]  # Remove 'output/' prefix
-                                    if 'average_discount' in base_fname.lower() or 'segment' in base_fname.lower():
-                                        fname = f"average_discount_by_segment_region.png"
-                                    elif 'total_orders' in base_fname.lower() or 'region' in base_fname.lower():
-                                        fname = f"total_orders_by_segment_region.png"
-                                
-                                # Convert binary data to latin1-encoded string for storage
-                                data_str = data_bytes.decode('latin1') if isinstance(data_bytes, bytes) else data_bytes
-                                store_out = store_data(StoreDataInput(data=data_str, file_name=fname))
-                                if store_out.success and store_out.file_handle:
-                                    artifacts.append(store_out.file_handle)
-                                    stdout += f"\nOutput chart saved: {fname} -> {store_out.file_handle}\n"
-                            except Exception as e:
-                                stdout += f"\nError parsing artifact: {str(e)}\n"
-                        else:
-                            stdout += f"\n{line}"
+                
+                # Collect all output into a single string for robust parsing
+                all_output = []
                 if post_exec.logs and post_exec.logs.stdout:
-                    _parse_lines(post_exec.logs.stdout)
+                    all_output.extend(post_exec.logs.stdout)
                 if post_exec.results:
                     for r in post_exec.results:
                         if hasattr(r, 'text') and r.text:
-                            _parse_lines(r.text.splitlines())
-            except Exception:
-                pass
+                            all_output.append(r.text)
+                
+                # Join all output and parse artifacts using markers
+                full_output = '\n'.join(str(line) for line in all_output if line)
+                
+                # Parse artifacts using start/end markers
+                import re
+                artifact_pattern = r'__CQ_ARTIFACT_START__:([^\n]+)\n(.*?)__CQ_ARTIFACT_END__'
+                matches = re.findall(artifact_pattern, full_output, re.DOTALL)
+                
+                stdout += f"\n[DEBUG] Found {len(matches)} chart artifacts\n"
+                
+                for fname, b64_data in matches:
+                    try:
+                        fname = fname.strip()
+                        # Remove all whitespace and newlines from base64 string
+                        b64_clean = b64_data.replace('\n', '').replace('\r', '').replace(' ', '').strip()
+                        
+                        import base64 as _b64
+                        data_bytes = _b64.b64decode(b64_clean)
+                        
+                        # Remove 'output/' prefix but preserve original filename
+                        if fname.startswith('output/'):
+                            fname = fname[7:]
+                        
+                        # Convert binary data to latin1-encoded string for storage
+                        data_str = data_bytes.decode('latin1') if isinstance(data_bytes, bytes) else data_bytes
+                        store_out = store_data(StoreDataInput(data=data_str, file_name=fname))
+                        if store_out.success and store_out.file_handle:
+                            artifacts.append(store_out.file_handle)
+                            stdout += f"\n✅ Chart saved: {fname} -> {store_out.file_handle}\n"
+                    except Exception as e:
+                        stdout += f"\n❌ Error parsing artifact {fname}: {str(e)}\n"
+                
+            except Exception as e:
+                stdout += f"\n[ERROR] Artifact capture failed: {str(e)}\n"
             
             return CodeInterpreterOutput(
                 success=success, 

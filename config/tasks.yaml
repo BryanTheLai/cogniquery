@@ -132,35 +132,55 @@ analyze_data_task:
 
 generate_report_task:
   description: >
-    Take the markdown-formatted analysis and insights and compile them into a final,
-    professional report. You MUST preserve ALL key findings and insights from the data analysis.
-    After creating the markdown report, you MUST generate a PDF version using the generate_pdf_report tool.
+    Create a comprehensive executive report following the EXACT structure template defined in your
+    agent configuration. This is NOT a summary - this is a complete, structured business report.
     
-    CRITICAL CONTENT REQUIREMENTS:
-    - PRESERVE all specific findings about segments, regions, discount percentages, and profitability
-    - HIGHLIGHT problem areas identified in the analysis (e.g., segments with excessive discounts)
-    - INCLUDE all data tables and key metrics from the analysis
-    - PROVIDE clear, actionable recommendations based on the findings
-    - DO NOT summarize away important details - include the full analysis
+    MANDATORY STRUCTURE (MUST include ALL sections):
+    1. # CogniQuery Analysis Report (with timestamp)
+    2. ## [Specific Analysis Title]
+    3. ## TL;DR (with **Quantitative** and **Qualitative** bolded)
+    4. ## Executive Summary (5 bullet points with **bolded keywords**)
+    5. ## Strategic Context (2-3 paragraphs)
+    6. ## Key Findings (numbered list with metrics table)
+    7. ## Visual Analysis – Key Chart Summaries (with chart references)
+    8. ## Strategic Business Implications
+    9. ## Recommendations (5 numbered items with sub-bullets)
+    10. ## Implementation Roadmap (Phase 1/2/3)
+    11. ## Risk Considerations & Analytical Confidence
+    12. ## KPIs for Success
+    13. ## Future Analytics
+    14. ## Attachments: Charts
+    15. ## Confirmation of Chart Generation
     
-    CRITICAL WORKFLOW:
-    1. Create the final markdown report from the analysis - PRESERVE ALL KEY FINDINGS
-    2. Extract chart handles from the data analyst's artifacts (look for file handles like "average_discount_by_segment_region.png", "total_orders_by_segment_region.png")
-    3. Call generate_pdf_report(markdown_content=final_report, chart_handles=["handle1", "handle2"])
-    4. Confirm PDF generation success and provide the PDF file handle
+    CRITICAL CONTENT PRESERVATION:
+    - Extract and include ALL specific numbers from the analysis (sales, profits, percentages, counts)
+    - Preserve ALL problem areas identified (e.g., which segments/regions have issues)
+    - Include the complete metrics table from the analysis
+    - Reference ALL charts by their filenames
+    - Provide specific, actionable recommendations based on the data
+    - Use **bold** for ALL important keywords, metrics, and findings
     
-    CHART HANDLE EXTRACTION:
-    - Look for chart file handles in the analysis artifacts
-    - Common patterns: "average_discount_by_segment_region.png", "total_orders_by_segment_region.png"
-    - Pass these as a JSON array to the chart_handles parameter
-    - If no specific handles found, use empty array []
+    CHART HANDLING:
+    - Extract ALL chart filenames from the analysis (e.g., "chart_1.png", "chart_2.png")
+    - Reference charts in Visual Analysis section using: ![Chart 1](chart_1.png)
+    - List all charts in the Attachments section
+    - Charts are created by data_analyst in "output/" directory
     
-    PDF GENERATION REQUIREMENTS:
-    - MANDATORY: Call generate_pdf_report after creating the markdown
-    - Pass the complete markdown content as markdown_content parameter
-    - Include all chart handles found in the analysis as chart_handles parameter
-    - Report success/failure of PDF generation
+    YOUR TASK:
+    Create ONLY the markdown report. DO NOT call generate_pdf_report tool.
+    Your output should be pure markdown text following the 15-section structure.
+    
+    QUALITY CHECKLIST:
+    ✓ Report starts with "# CogniQuery Analysis Report"
+    ✓ Contains timestamp in italics
+    ✓ TL;DR has **Quantitative** and **Qualitative** labels
+    ✓ ALL 15 sections are present
+    ✓ Specific numbers from analysis are included
+    ✓ Charts are referenced with ![Chart](filename.png) syntax
+    ✓ Recommendations are actionable and specific
+    ✓ Professional executive tone throughout
+    ✓ Output is PURE MARKDOWN TEXT - no tool calls
   expected_output: >
-    The complete executive report in Markdown format, followed by confirmation of PDF generation
-    with the PDF file handle. The markdown should start with the report title (e.g., "# Executive Report: ...").
-    Place TLDR items inside the Executive Summary section under the title. End with PDF generation status.
+    A complete executive report in markdown format with ALL 15 sections filled in with specific content
+    from the analysis. The report must start with "# CogniQuery Analysis Report" and end with
+    "## Confirmation of Chart Generation". Output ONLY markdown text - do not call any tools.

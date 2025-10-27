@@ -45,7 +45,34 @@ load_dotenv()
 # Initialize with your bot token and app token
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 
+def _extract_tldr(markdown: str) -> str:
+    """
+    Extract only the TL;DR section from the markdown report.
+    Returns the TL;DR content for Slack posting.
+    """
+    lines = markdown.split('\n')
+    tldr_start = -1
+    tldr_end = -1
+    
+    # Find TL;DR section
+    for i, line in enumerate(lines):
+        if line.strip().startswith('## TL;DR') or line.strip().startswith('## TL:DR'):
+            tldr_start = i
+        elif tldr_start >= 0 and line.strip().startswith('##'):
+            tldr_end = i
+            break
+    
+    if tldr_start >= 0:
+        if tldr_end < 0:
+            tldr_end = len(lines)
+        tldr_content = '\n'.join(lines[tldr_start:tldr_end])
+        return tldr_content.strip()
+    
+    # Fallback: return first 500 characters if TL;DR not found
+    return markdown[:500] + "...\n\n📄 *View full report in the PDF attachment*"
+
 def _md_to_slack(text: str) -> str:
+    """Convert markdown to Slack mrkdwn format."""
     t = text
     t = re.sub(r'^(#{1,6})\s*(.+)$', lambda m: f"*{m.group(2).strip()}*", t, flags=re.MULTILINE)
     t = re.sub(r'\*\*([^*]+)\*\*', r'*\1*', t)
@@ -59,9 +86,12 @@ def run_cogniquery_and_reply(query: str, channel_id: str, client: Any) -> None:
     try:
         print(f"🚀 Received query: '{query}' - Activating agent")
 
-        final_markdown = asyncio.run(run_query_to_markdown(query))
-        print("✅ Final markdown generated, posting summary and generating PDF...")
-        slack_text = _md_to_slack(final_markdown)
+        final_markdown, analysis = asyncio.run(run_query_to_markdown(query))
+        print("✅ Final markdown generated, posting TL;DR and generating PDF...")
+        
+        # Extract only TL;DR for Slack message
+        tldr_section = _extract_tldr(final_markdown)
+        slack_text = _md_to_slack(tldr_section)
 
         mcp_url = os.getenv("MCP_URL", "http://127.0.0.1:8010/mcp")
 

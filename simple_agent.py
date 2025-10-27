@@ -54,11 +54,139 @@ def _output_dir() -> str:
 
 def _markdown_to_pdf(markdown_text: str, filename_hint: str = "final_report") -> str:
     md = MarkdownIt()
-    html = md.render(markdown_text)
+    html_body = md.render(markdown_text)
+    
+    # Professional CSS styling for executive reports
+    css = """
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 {
+            font-size: 24pt;
+            font-weight: bold;
+            color: #1a1a1a;
+            margin-top: 0;
+            margin-bottom: 0.5em;
+            padding-bottom: 0.3em;
+            border-bottom: 3px solid #2E86AB;
+        }
+        h2 {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #2E86AB;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            page-break-after: avoid;
+        }
+        h3 {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #444;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        p {
+            margin-bottom: 0.8em;
+            text-align: justify;
+        }
+        strong {
+            font-weight: bold;
+            color: #1a1a1a;
+        }
+        em {
+            font-style: italic;
+            color: #666;
+        }
+        ul, ol {
+            margin-left: 1.5em;
+            margin-bottom: 1em;
+        }
+        li {
+            margin-bottom: 0.5em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1em 0;
+            font-size: 10pt;
+        }
+        th {
+            background-color: #2E86AB;
+            color: white;
+            font-weight: bold;
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        td {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f0f0f0;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1.5em auto;
+            page-break-inside: avoid;
+        }
+        hr {
+            border: none;
+            border-top: 2px solid #ddd;
+            margin: 1.5em 0;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 9pt;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 1em;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 9pt;
+        }
+        blockquote {
+            border-left: 4px solid #2E86AB;
+            padding-left: 1em;
+            margin-left: 0;
+            color: #666;
+            font-style: italic;
+        }
+    """
+    
+    full_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>{css}</style>
+    </head>
+    <body>
+        {html_body}
+    </body>
+    </html>
+    """
+    
     ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     pdf_name = f"{filename_hint}_{ts}.pdf"
     pdf_path = os.path.join(_output_dir(), pdf_name)
-    HTML(string=html).write_pdf(pdf_path)
+    HTML(string=full_html).write_pdf(pdf_path)
     return os.path.abspath(pdf_path)
 
 def _get_llm() -> ChatGoogleGenerativeAI:
@@ -103,15 +231,27 @@ async def agent_run_to_text(messages: list[dict[str, Any]], mcp_url: str | None 
                         # Collect content from AI messages
                         if last_message.get("type") == "ai":
                             content = last_message.get("content") or ""
-                            if isinstance(content, str) and content.strip():
+                            
+                            # Extract text from content (handles both string and array formats)
+                            text_content = ""
+                            if isinstance(content, str):
+                                text_content = content
+                            elif isinstance(content, list):
+                                # Extract text from array of content blocks
+                                for item in content:
+                                    if isinstance(item, dict):
+                                        if item.get("type") == "text" and "text" in item:
+                                            text_content += item["text"]
+                            
+                            if text_content.strip():
                                 # Skip tool calls and function calls, focus on actual content
                                 if not last_message.get("tool_calls") and not last_message.get("additional_kwargs", {}).get("function_call"):
-                                    all_ai_content.append(content.strip())
-                                    last_text = content.strip()
-                                elif content.strip() and not any(keyword in content.lower() for keyword in ["function_call", "tool_call", "arguments"]):
+                                    all_ai_content.append(text_content.strip())
+                                    last_text = text_content.strip()
+                                elif not any(keyword in text_content.lower() for keyword in ["function_call", "tool_call", "arguments"]):
                                     # Include content that's not just tool metadata
-                                    all_ai_content.append(content.strip())
-                                    last_text = content.strip()
+                                    all_ai_content.append(text_content.strip())
+                                    last_text = text_content.strip()
             except Exception as e:
                 log_entry("error", str(e))
             
@@ -136,7 +276,11 @@ def _persona_system_prompt(agents_cfg: dict[str, Any], key: str) -> str:
     backstory = a.get("backstory", "")
     return f"{SYSTEM_PROMPT}\n\nRole:\n{role}\n\nGoal:\n{goal}\n\nBackstory:\n{backstory}"
 
-async def run_query_to_markdown(query: str, mcp_url: str | None = None) -> str:
+async def run_query_to_markdown(query: str, mcp_url: str | None = None) -> Tuple[str, str]:
+    """
+    Run the full analysis workflow and return (markdown_report, analysis_with_charts).
+    The analysis contains the data insights and chart references.
+    """
     base = _this_dir
     agents_cfg_path = os.path.join(base, "config", "agents.yaml")
     tasks_cfg_path = os.path.join(base, "config", "tasks.yaml")
@@ -170,10 +314,10 @@ async def run_query_to_markdown(query: str, mcp_url: str | None = None) -> str:
     if not final_markdown:
         final_markdown = analysis
 
-    return final_markdown
+    return final_markdown, analysis
 
 async def run_query_and_generate_pdf(query: str, mcp_url: str | None = None) -> Tuple[str, str]:
-    final_markdown = await run_query_to_markdown(query, mcp_url=mcp_url)
+    final_markdown, analysis = await run_query_to_markdown(query, mcp_url=mcp_url)
     pdf_path = _markdown_to_pdf(final_markdown, filename_hint="final_report")
     return final_markdown, pdf_path
 

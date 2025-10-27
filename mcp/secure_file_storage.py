@@ -53,7 +53,9 @@ def store_data(input_data: StoreDataInput) -> FileHandleOutput:
     Handles both text and binary data automatically.
     """
     try:
-        backend = os.getenv("STORAGE_BACKEND", "local").lower()
+        backend = os.getenv("STORAGE_BACKEND", "local").lower().strip()
+        print(f"[DEBUG] STORAGE_BACKEND from env: '{backend}' (type: {type(backend)})")
+        
         if backend == "s3":
             if s3_storage is None:
                 return FileHandleOutput(success=False, error_message="S3 backend requested but not available")
@@ -102,7 +104,7 @@ def retrieve_data(input_data: RetrieveDataInput) -> RetrievedDataOutput:
     Automatically handles both text and binary data.
     """
     try:
-        backend = os.getenv("STORAGE_BACKEND", "local").lower()
+        backend = os.getenv("STORAGE_BACKEND", "local").lower().strip()
         if backend == "s3":
             if s3_storage is None:
                 return RetrievedDataOutput(success=False, error_message="S3 backend requested but not available")
